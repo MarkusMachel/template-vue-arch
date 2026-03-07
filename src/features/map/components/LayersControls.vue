@@ -1,0 +1,152 @@
+<script setup lang="ts">
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { useMapStore } from "../store/mapStore";
+
+const store = useMapStore();
+
+function updateHexOpacity(val: number[] | undefined) {
+  if (val && val[0] !== undefined) store.hexagonOpacity = val[0];
+}
+
+function updatePointOpacity(val: number[] | undefined) {
+  if (val && val[0] !== undefined) store.pointsOpacity = val[0];
+}
+
+function updatePointSize(val: number[] | undefined) {
+  if (val && val[0] !== undefined) store.pointSize = val[0];
+}
+
+function updateH3Resolution(val: number[] | undefined) {
+  if (val && val[0] !== undefined) {
+    store.h3ResolutionOverride = val[0] === 0 ? null : val[0];
+  }
+}
+</script>
+
+<template>
+  <div class="flex flex-col gap-4 py-2">
+    <!-- Hexagon Opacity -->
+    <div class="flex flex-col gap-3">
+      <Label class="text-xs font-medium">
+        Hexagon Opacity {{ Math.round(store.hexagonOpacity * 100) }}%
+      </Label>
+      <Slider
+        :model-value="[store.hexagonOpacity]"
+        :min="0"
+        :max="1"
+        :step="0.05"
+        @update:model-value="updateHexOpacity($event)"
+      />
+    </div>
+
+    <!-- H3 Resolution -->
+    <div class="flex flex-col gap-3">
+      <Label class="text-xs font-medium">
+        H3 Resolution
+        {{
+          store.h3ResolutionOverride === null
+            ? "(Auto)"
+            : store.h3ResolutionOverride
+        }}
+      </Label>
+      <Slider
+        :model-value="[store.h3ResolutionOverride ?? 0]"
+        :min="0"
+        :max="6"
+        :step="1"
+        @update:model-value="updateH3Resolution($event)"
+      />
+      <span class="text-xs text-muted-foreground">0 = auto based on zoom</span>
+    </div>
+
+    <!-- Hexagon Color Scheme -->
+    <div class="flex flex-col gap-2">
+      <Label class="text-xs font-medium">Hexagon Color Scheme</Label>
+      <div class="flex flex-col gap-1">
+        <button
+          v-for="scheme in [
+            'blue-red',
+            'green-yellow',
+            'purple-orange',
+          ] as const"
+          :key="scheme"
+          class="text-xs px-3 py-1.5 rounded-md text-left transition-colors"
+          :class="
+            store.hexColorScheme === scheme
+              ? 'bg-primary text-primary-foreground'
+              : 'hover:bg-accent text-muted-foreground'
+          "
+          @click="store.hexColorScheme = scheme"
+        >
+          {{
+            scheme === "blue-red"
+              ? "Blue → Red"
+              : scheme === "green-yellow"
+                ? "Green → Yellow"
+                : "Purple → Orange"
+          }}
+        </button>
+      </div>
+    </div>
+
+    <Separator />
+
+    <!-- Points Opacity -->
+    <div class="flex flex-col gap-3">
+      <Label class="text-xs font-medium">
+        Points Opacity {{ Math.round(store.pointsOpacity * 100) }}%
+      </Label>
+      <Slider
+        :model-value="[store.pointsOpacity]"
+        :min="0"
+        :max="1"
+        :step="0.05"
+        @update:model-value="updatePointOpacity($event)"
+      />
+    </div>
+
+    <!-- Point Size -->
+    <div class="flex flex-col gap-3">
+      <Label class="text-xs font-medium">
+        Point Size {{ store.pointSize / 1000 }}km
+      </Label>
+      <Slider
+        :model-value="[store.pointSize]"
+        :min="5000"
+        :max="100000"
+        :step="5000"
+        @update:model-value="updatePointSize($event)"
+      />
+    </div>
+
+    <Separator />
+
+    <!-- Color Mode -->
+    <div class="flex flex-col gap-2">
+      <Label class="text-xs font-medium">Color By</Label>
+      <div class="flex flex-col gap-1">
+        <button
+          v-for="mode in ['make', 'fuelType', 'recallFlag'] as const"
+          :key="mode"
+          class="text-xs px-3 py-1.5 rounded-md text-left transition-colors"
+          :class="
+            store.colorMode === mode
+              ? 'bg-primary text-primary-foreground'
+              : 'hover:bg-accent text-muted-foreground'
+          "
+          @click="store.colorMode = mode"
+        >
+          {{
+            mode === "make"
+              ? "Make"
+              : mode === "fuelType"
+                ? "Fuel Type"
+                : "Recall Flag"
+          }}
+        </button>
+      </div>
+    </div>
+  </div>
+</template>

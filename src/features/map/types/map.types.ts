@@ -14,3 +14,11 @@ export interface VinPoint {
   fuelType: string;
   recallFlag: boolean;
 }
+
+export const COLOR_MODES = {
+  make: "make",
+  fuelType: "fuelType",
+  recallFlag: "recallFlag",
+} as const;
+
+export type ColorMode = keyof typeof COLOR_MODES;
