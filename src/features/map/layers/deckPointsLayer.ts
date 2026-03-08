@@ -1,8 +1,6 @@
 import type { PickingInfo } from "@deck.gl/core";
-import type { VinPoint } from "../types/map.types";
-import { MOCK_VIN_POINTS } from "../utils/mockPoints";
+import type { VinPoint, ColorMode } from "../types/map.types";
 import { ScatterplotLayer } from "@deck.gl/layers";
-import type { ColorMode } from "../types/map.types";
 
 const MAKE_COLORS: Record<string, [number, number, number]> = {
   Chevrolet: [231, 76, 60],
@@ -35,13 +33,14 @@ function getColor(
     case "make":
       return MAKE_COLORS[point.make] ?? DEFAULT_COLOR;
     case "fuelType":
-      return FUEL_COLORS[point.fuelType] ?? DEFAULT_COLOR;
+      return FUEL_COLORS[point.fuelType ?? ""] ?? DEFAULT_COLOR;
     case "recallFlag":
       return RECALL_COLORS[String(point.recallFlag)] ?? DEFAULT_COLOR;
   }
 }
 
 export function createVinScatterplotLayer(
+  data: VinPoint[],
   onClick?: (vin: VinPoint) => void,
   onHoverCallback?: (vin: VinPoint | null) => void,
   opacity: number = 0.9,
@@ -50,7 +49,7 @@ export function createVinScatterplotLayer(
 ) {
   return new ScatterplotLayer<VinPoint>({
     id: "vin-scatterplot",
-    data: MOCK_VIN_POINTS,
+    data,
     getPosition: (d) => [d.lon, d.lat],
     getFillColor: (d) => getColor(d, colorMode),
     getRadius: pointSize,

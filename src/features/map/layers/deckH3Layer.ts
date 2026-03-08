@@ -1,8 +1,10 @@
 import { H3HexagonLayer } from "@deck.gl/geo-layers";
-import { generateMockH3Data } from "../utils/mockH3Data";
+import { ScatterplotLayer } from "@deck.gl/layers";
+import { cellToLatLng } from "h3-js";
 import type { H3Cell } from "../utils/mockH3Data";
+import type { ColorScheme } from "../types/map.types";
 
-type ColorScheme = "blue-red" | "green-yellow" | "purple-orange";
+export type HexStyle = "hexagon" | "bubble";
 
 const COLOR_SCHEMES: Record<
   ColorScheme,
@@ -39,13 +41,43 @@ function interpolateColor(
 }
 
 export function createH3Layer(
+  data: H3Cell[],
   resolution: number = 3,
   opacity: number = 1,
   colorScheme: ColorScheme = "blue-red",
+  hexStyle: HexStyle = "hexagon",
 ) {
-  const data = generateMockH3Data(resolution);
-  const maxCount = Math.max(...data.map((d) => d.count));
+  const maxCount = Math.max(...data.map((d) => d.count), 1);
   const scheme = COLOR_SCHEMES[colorScheme];
+
+  if (hexStyle === "bubble") {
+    return new ScatterplotLayer<H3Cell>({
+      id: "vin-h3-bubbles",
+      data,
+      opacity,
+      getPosition: (d) => {
+        const [lat, lng] = cellToLatLng(d.h3Index);
+        return [lng, lat];
+      },
+      getRadius: (d) => {
+        const t = d.count / maxCount;
+        // scale radius between 20km and 120km based on density
+        return 20000 + t * 100000;
+      },
+      getFillColor: (d) => {
+        const t = d.count / maxCount;
+        return interpolateColor(scheme.min, scheme.max, t);
+      },
+      stroked: true,
+      getLineColor: [255, 255, 255, 40],
+      lineWidthMinPixels: 1,
+      pickable: true,
+      radiusUnits: "meters",
+      onClick: (info) => {
+        if (info.object) console.log("bubble clicked:", info.object);
+      },
+    });
+  }
 
   return new H3HexagonLayer<H3Cell>({
     id: "vin-h3-hexagons",
@@ -53,7 +85,7 @@ export function createH3Layer(
     opacity,
     getHexagon: (d) => d.h3Index,
     getFillColor: (d) => {
-      const t = maxCount > 1 ? d.count / maxCount : 0;
+      const t = d.count / maxCount;
       return interpolateColor(scheme.min, scheme.max, t);
     },
     getElevation: 0,

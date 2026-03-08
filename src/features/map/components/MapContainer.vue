@@ -1,15 +1,37 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
-
+import { onMounted, ref } from "vue";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import MapSidePanel from "../components/MapSidePanel.vue";
+import FilterToolbar from "../components/FilterToolbar.vue";
+import PointCardManager from "../components/PointCardManager.vue";
 import { useMap } from "../composables/useMap";
+import { useMapStore } from "../store/mapStore";
+import type { DrawMode } from "../store/mapStore";
 
-const { initMap } = useMap();
+const store = useMapStore();
+const { initMap, map } = useMap();
+const drawFilterRef = ref<any>(null);
 
-onMounted(() => {
+onMounted(async () => {
   initMap("map-container");
+
+  const checkMap = setInterval(() => {
+    if (map.value) {
+      clearInterval(checkMap);
+      import("../composables/useDrawFilter").then(({ useDrawFilter }) => {
+        drawFilterRef.value = useDrawFilter(map.value!, () => {});
+      });
+    }
+  }, 100);
 });
+
+function handleStartDraw(mode: DrawMode) {
+  drawFilterRef.value?.startDraw(mode);
+}
+
+function handleClearDraw() {
+  drawFilterRef.value?.clearDraw();
+}
 </script>
 
 <template>
@@ -17,6 +39,11 @@ onMounted(() => {
     <MapSidePanel />
     <div id="map-container" class="map-container" />
     <SidebarTrigger class="map-trigger" />
+    <FilterToolbar
+      @start-draw="handleStartDraw"
+      @clear-draw="handleClearDraw"
+    />
+    <PointCardManager />
   </SidebarProvider>
 </template>
 

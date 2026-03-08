@@ -11,8 +11,8 @@ export interface VinPoint {
   make: string;
   model: string;
   year: number;
-  fuelType: string;
-  recallFlag: boolean;
+  fuelType?: string;
+  recallFlag?: boolean;
 }
 
 export const COLOR_MODES = {
@@ -22,3 +22,22 @@ export const COLOR_MODES = {
 } as const;
 
 export type ColorMode = keyof typeof COLOR_MODES;
+
+export type ColorScheme = "blue-red" | "green-yellow" | "purple-orange";
+
+export interface PointCard {
+  id: string;
+  vin: string;
+  make: string;
+  model: string;
+  year: number;
+  city: string;
+  state: string;
+  zip: string;
+  carrier_route: string;
+  lat: number;
+  lon: number;
+  screenX: number;
+  screenY: number;
+  pinned: boolean;
+}

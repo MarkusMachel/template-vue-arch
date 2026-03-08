@@ -1,12 +1,15 @@
-import { onUnmounted, shallowRef, watch } from "vue";
+import { onUnmounted, shallowRef, watch, ref } from "vue";
 import type { MapConfig } from "../types/map.types";
 import { DEFAULT_STYLE } from "../utils/mapStyles";
-import maplibregl, { Map } from "maplibre-gl";
+import maplibregl, { Map as MaplibreMap } from "maplibre-gl";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import type { Layer } from "@deck.gl/core";
-import { createVinScatterplotLayer } from "../layers/deckPointsLayer";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import { createH3Layer } from "../layers/deckH3Layer";
+import { createMVTPointLayer } from "../layers/deckMVTLayer";
 import { useMapStore } from "../store/mapStore";
+import type { H3Cell } from "../utils/mockH3Data";
+import { createBoundaryLayer } from "../layers/deckBoundaryLayers";
 
 const DEFAULT_CONFIG: MapConfig = {
   center: [-98.5795, 39.8283],
@@ -14,35 +17,194 @@ const DEFAULT_CONFIG: MapConfig = {
   style: DEFAULT_STYLE,
 };
 
+const MAKE_COLORS: Record<string, [number, number, number]> = {
+  Chevrolet: [231, 76, 60],
+  Honda: [52, 152, 219],
+  Toyota: [46, 204, 113],
+  Ford: [230, 126, 34],
+  Volkswagen: [155, 89, 182],
+  Nissan: [26, 188, 156],
+  Tesla: [233, 30, 99],
+};
+const DEFAULT_COLOR: [number, number, number] = [170, 170, 170];
+
+function getResolutionForZoom(zoom: number): number {
+  if (zoom < 4) return 3;
+  if (zoom < 6) return 4;
+  if (zoom < 8) return 5;
+  if (zoom < 10) return 6;
+  return 7;
+}
+
+const MVT_ZOOM_THRESHOLD = 10;
+
 export function useMap() {
-  const map = shallowRef<Map | null>(null);
+  const map = shallowRef<MaplibreMap | null>(null);
   const isLoaded = shallowRef(false);
   const deckOverlay = shallowRef<MapboxOverlay | null>(null);
   const store = useMapStore();
+  const h3Data = ref<H3Cell[]>([]);
+  const filteredPoints = ref<any[]>([]);
+
+  // ── Point click handler ────────────────────────────────────────────────────
+
+  async function handlePointClick(
+    properties: any,
+    screenX: number,
+    screenY: number,
+  ) {
+    const vin = properties?.vin;
+    if (!vin) return;
+
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/vins/${vin}`,
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+
+      store.openCard({
+        id: `${vin}-${Date.now()}`,
+        vin: data.vin,
+        make: data.make,
+        model: data.model,
+        year: data.year,
+        city: data.city,
+        state: data.state,
+        zip: data.zip,
+        carrier_route: data.carrier_route,
+        lat: data.lat,
+        lon: data.lon,
+        screenX: Math.min(screenX + 12, window.innerWidth - 272),
+        screenY: Math.min(screenY - 20, window.innerHeight - 340),
+        pinned: false,
+      });
+    } catch (e) {
+      console.error("Failed to fetch VIN details", e);
+    }
+  }
+
+  // ── H3 fetching ────────────────────────────────────────────────────────────
+
+  async function loadH3Data(resolution: number): Promise<H3Cell[]> {
+    if (!map.value) return [];
+    const bounds = map.value.getBounds();
+
+    if (store.activeFilterGeometry) {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/h3/filter`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          geometry: store.activeFilterGeometry,
+          resolution,
+        }),
+      });
+      const data = await res.json();
+      store.filterCount = data.total ?? null;
+      return data.h3Cells ?? [];
+    }
+
+    const params = new URLSearchParams({
+      resolution: String(resolution),
+      minLat: String(bounds.getSouth()),
+      maxLat: String(bounds.getNorth()),
+      minLon: String(bounds.getWest()),
+      maxLon: String(bounds.getEast()),
+    });
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/h3?${params}`);
+    return res.json();
+  }
+
+  async function fetchH3Data() {
+    if (!map.value) return;
+    const zoom = map.value.getZoom();
+    if (zoom >= MVT_ZOOM_THRESHOLD && !store.activeFilterGeometry) return;
+    const resolution = store.h3ResolutionOverride ?? getResolutionForZoom(zoom);
+    h3Data.value = await loadH3Data(resolution);
+    refreshLayers();
+  }
+
+  // ── Filtered points fetching ───────────────────────────────────────────────
+
+  async function fetchFilteredPoints() {
+    if (!store.activeFilterGeometry) {
+      filteredPoints.value = [];
+      return;
+    }
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/api/points/filter`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          geometry: store.activeFilterGeometry,
+          resolution: 4,
+        }),
+      },
+    );
+    filteredPoints.value = await res.json();
+    refreshLayers();
+  }
+
+  // ── Layers ─────────────────────────────────────────────────────────────────
 
   function getDeckLayers(zoom: number) {
-    const zoomHexOpacity = Math.max(
-      0,
-      Math.min(store.hexagonOpacity, (8 - zoom) / 2),
-    );
-    const zoomPointOpacity = Math.max(
-      0,
-      Math.min(store.pointsOpacity, (zoom - 6) / 2),
-    );
-    const resolution = store.h3ResolutionOverride ?? (zoom < 5 ? 2 : 3);
+    const resolution = store.h3ResolutionOverride ?? getResolutionForZoom(zoom);
+    const showHexagons = zoom < MVT_ZOOM_THRESHOLD;
+    const zoomHexOpacity = showHexagons
+      ? Math.max(
+          0,
+          Math.min(store.hexagonOpacity, (MVT_ZOOM_THRESHOLD - zoom) / 2),
+        )
+      : 0;
+    const zoomPointOpacity = !showHexagons
+      ? store.pointsOpacity
+      : Math.max(
+          0,
+          Math.min(store.pointsOpacity, (zoom - (MVT_ZOOM_THRESHOLD - 2)) / 2),
+        );
+
+    const pointsLayer = store.activeFilterGeometry
+      ? new ScatterplotLayer({
+          id: "vin-filtered-points",
+          data: filteredPoints.value,
+          opacity: zoomPointOpacity,
+          getPosition: (d: any) => [d.lon, d.lat],
+          getRadius: 50,
+          radiusMinPixels: 4,
+          radiusMaxPixels: 12,
+          getFillColor: (d: any) =>
+            store.colorMode === "make"
+              ? (MAKE_COLORS[d.make] ?? DEFAULT_COLOR)
+              : DEFAULT_COLOR,
+          pickable: true,
+          onClick: (info: any) => {
+            if (info.object && info.pixel) {
+              handlePointClick(info.object, info.pixel[0], info.pixel[1]);
+            }
+          },
+        })
+      : createMVTPointLayer(
+          zoomPointOpacity,
+          store.colorMode,
+          store.pointShape,
+          `${import.meta.env.VITE_API_URL}/tiles/{z}/{x}/{y}`,
+          (feature, screenX, screenY) =>
+            handlePointClick(feature.properties, screenX, screenY),
+        );
 
     return [
-      createH3Layer(resolution, zoomHexOpacity, store.hexColorScheme),
-      createVinScatterplotLayer(
-        (vin) => console.log("clicked:", vin),
-        (vin) => {
-          const canvas = map.value?.getCanvas();
-          if (canvas) canvas.style.cursor = vin ? "pointer" : "grab";
-        },
-        zoomPointOpacity,
-        store.colorMode,
-        store.pointSize,
+      createBoundaryLayer("states", zoom, store.statesVisible),
+      createBoundaryLayer("counties", zoom, store.countiesVisible),
+      createBoundaryLayer("zips", zoom, store.zipsVisible),
+      createH3Layer(
+        h3Data.value,
+        resolution,
+        zoomHexOpacity,
+        store.hexColorScheme,
+        store.hexStyle,
       ),
+      pointsLayer,
     ];
   }
 
@@ -53,6 +215,14 @@ export function useMap() {
     });
   }
 
+  async function applyFilterRefresh() {
+    await fetchH3Data();
+    await fetchFilteredPoints();
+    refreshLayers();
+  }
+
+  // ── Deck init ──────────────────────────────────────────────────────────────
+
   function initDeck() {
     if (!map.value) return;
     deckOverlay.value = new MapboxOverlay({
@@ -61,11 +231,11 @@ export function useMap() {
       getCursor: ({ isHovering }) => (isHovering ? "pointer" : "grab"),
     });
     map.value.addControl(deckOverlay.value as any);
-
-    map.value.on("zoom", () => {
-      refreshLayers();
-    });
+    map.value.on("zoom", () => refreshLayers());
+    map.value.on("moveend", () => fetchH3Data());
   }
+
+  // ── Visibility helpers ─────────────────────────────────────────────────────
 
   function applyBuildingVisibility(visible: boolean) {
     if (!map.value) return;
@@ -113,6 +283,8 @@ export function useMap() {
     });
   }
 
+  // ── Map init ───────────────────────────────────────────────────────────────
+
   function initMap(containerId: string, config: MapConfig = DEFAULT_CONFIG) {
     map.value = new maplibregl.Map({
       container: containerId,
@@ -123,15 +295,11 @@ export function useMap() {
 
     map.value.addControl(new maplibregl.NavigationControl(), "top-right");
 
-    map.value.on("load", () => {
+    map.value.on("load", async () => {
       isLoaded.value = true;
+      await fetchH3Data();
       initDeck();
-      const layers = map.value?.getStyle()?.layers;
-      console.log(
-        "All layers:",
-        layers?.map((l) => ({ id: l.id, type: l.type })),
-      );
-      // Watch layer store properties
+
       watch(
         () => [
           store.hexagonOpacity,
@@ -140,12 +308,30 @@ export function useMap() {
           store.h3ResolutionOverride,
           store.pointSize,
           store.hexColorScheme,
+          store.statesVisible,
+          store.countiesVisible,
+          store.zipsVisible,
+          store.hexStyle,
+          store.pointShape,
         ],
         () => refreshLayers(),
         { deep: true },
       );
 
-      // Watch style changes
+      watch(
+        () => store.activeFilterGeometry,
+        async (geom) => {
+          if (geom) {
+            await fetchH3Data();
+            await fetchFilteredPoints();
+          } else {
+            filteredPoints.value = [];
+            await fetchH3Data();
+          }
+          refreshLayers();
+        },
+      );
+
       watch(
         () => store.currentStyle,
         (newStyle) => {
@@ -160,13 +346,10 @@ export function useMap() {
         },
       );
 
-      // Watch buildings
       watch(
         () => store.buildingsVisible,
         (visible) => applyBuildingVisibility(visible),
       );
-
-      // Watch labels
       watch(
         () => store.labelsVisible,
         (visible) => applyLabelVisibility(visible),
@@ -181,9 +364,7 @@ export function useMap() {
     isLoaded.value = false;
   }
 
-  onUnmounted(() => {
-    destroyMap();
-  });
+  onUnmounted(() => destroyMap());
 
   return {
     map,
@@ -191,6 +372,7 @@ export function useMap() {
     deckOverlay,
     initMap,
     destroyMap,
+    applyFilterRefresh,
     setDeckLayers: (layers: Layer[]) => deckOverlay.value?.setProps({ layers }),
   };
 }

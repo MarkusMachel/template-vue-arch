@@ -61,9 +61,29 @@ function updateH3Resolution(val: number[] | undefined) {
       <span class="text-xs text-muted-foreground">0 = auto based on zoom</span>
     </div>
 
+    <!-- Density Style -->
+    <div class="flex flex-col gap-2">
+      <Label class="text-xs font-medium">Density Style</Label>
+      <div class="flex gap-2">
+        <button
+          v-for="style in ['hexagon', 'bubble'] as const"
+          :key="style"
+          class="flex-1 text-xs px-3 py-1.5 rounded-md transition-colors"
+          :class="
+            store.hexStyle === style
+              ? 'bg-primary text-primary-foreground'
+              : 'hover:bg-accent text-muted-foreground'
+          "
+          @click="store.hexStyle = style"
+        >
+          {{ style === "hexagon" ? "⬡ Hexagon" : "● Bubble" }}
+        </button>
+      </div>
+    </div>
+
     <!-- Hexagon Color Scheme -->
     <div class="flex flex-col gap-2">
-      <Label class="text-xs font-medium">Hexagon Color Scheme</Label>
+      <Label class="text-xs font-medium">Color Scheme</Label>
       <div class="flex flex-col gap-1">
         <button
           v-for="scheme in [
@@ -121,6 +141,32 @@ function updateH3Resolution(val: number[] | undefined) {
       />
     </div>
 
+    <!-- Point Shape -->
+    <div class="flex flex-col gap-2">
+      <Label class="text-xs font-medium">Point Shape</Label>
+      <div class="flex gap-2">
+        <button
+          v-for="shape in ['circle', 'diamond', 'triangle'] as const"
+          :key="shape"
+          class="flex-1 text-xs px-3 py-1.5 rounded-md transition-colors"
+          :class="
+            store.pointShape === shape
+              ? 'bg-primary text-primary-foreground'
+              : 'hover:bg-accent text-muted-foreground'
+          "
+          @click="store.pointShape = shape"
+        >
+          {{
+            shape === "circle"
+              ? "● Circle"
+              : shape === "diamond"
+                ? "◆ Diamond"
+                : "▲ Triangle"
+          }}
+        </button>
+      </div>
+    </div>
+
     <Separator />
 
     <!-- Color Mode -->
@@ -146,6 +192,57 @@ function updateH3Resolution(val: number[] | undefined) {
                 : "Recall Flag"
           }}
         </button>
+      </div>
+    </div>
+
+    <Separator />
+
+    <!-- Boundaries -->
+    <div class="flex flex-col gap-3">
+      <Label class="text-xs font-medium">Boundaries</Label>
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <Label class="text-xs text-muted-foreground">States</Label>
+          <button
+            class="text-xs px-3 py-1 rounded-md transition-colors"
+            :class="
+              store.statesVisible
+                ? 'bg-primary text-primary-foreground'
+                : 'hover:bg-accent text-muted-foreground'
+            "
+            @click="store.statesVisible = !store.statesVisible"
+          >
+            {{ store.statesVisible ? "On" : "Off" }}
+          </button>
+        </div>
+        <div class="flex items-center justify-between">
+          <Label class="text-xs text-muted-foreground">Counties</Label>
+          <button
+            class="text-xs px-3 py-1 rounded-md transition-colors"
+            :class="
+              store.countiesVisible
+                ? 'bg-primary text-primary-foreground'
+                : 'hover:bg-accent text-muted-foreground'
+            "
+            @click="store.countiesVisible = !store.countiesVisible"
+          >
+            {{ store.countiesVisible ? "On" : "Off" }}
+          </button>
+        </div>
+        <div class="flex items-center justify-between">
+          <Label class="text-xs text-muted-foreground">ZIP Codes</Label>
+          <button
+            class="text-xs px-3 py-1 rounded-md transition-colors"
+            :class="
+              store.zipsVisible
+                ? 'bg-primary text-primary-foreground'
+                : 'hover:bg-accent text-muted-foreground'
+            "
+            @click="store.zipsVisible = !store.zipsVisible"
+          >
+            {{ store.zipsVisible ? "On" : "Off" }}
+          </button>
+        </div>
       </div>
     </div>
   </div>
